@@ -2,7 +2,6 @@ package main
 
 import (
 	"Proxy/ProxyServer"
-	"fmt"
 	"log"
 	"time"
 )
@@ -14,6 +13,6 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	fmt.Println("starting server at :8080")
+	log.Println("starting server at :8080")
 	log.Fatal(server.ListenAndServe())
 }
