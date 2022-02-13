@@ -52,7 +52,6 @@ func (srv *Server) newConn(rwc net.Conn) *conn {
 type conn struct {
 	server *Server
 	rwc    net.Conn
-	//remoteAddr string
 }
 
 func (c *conn) serve() {
@@ -69,7 +68,8 @@ func (c *conn) serve() {
 
 	req, err := http.ReadRequest(buf)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return
 	}
 
 	req.RequestURI = ""
@@ -77,18 +77,24 @@ func (c *conn) serve() {
 
 	resp, err := proxyRequest(req)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 	defer resp.Body.Close()
 
 	respByte, err := ReadResp(resp)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 
-	c.rwc.Write(respByte)
+	_, err = c.rwc.Write(respByte)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	log.Println("Request:", req.Method, req.URL, "Response:", resp.Status)
 }
 
 func proxyRequest(req *http.Request) (*http.Response, error) {
@@ -107,11 +113,13 @@ func proxyRequest(req *http.Request) (*http.Response, error) {
 	client := &http.Client{
 		Timeout:   10 * time.Second,
 		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
 		return resp, err
 	}
 
