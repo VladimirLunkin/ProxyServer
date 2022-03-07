@@ -17,3 +17,6 @@
 go.sum
 
 .idea
+
+*.key
+*.crt

@@ -2,12 +2,17 @@ package ProxyServer
 
 import (
 	"bufio"
-	"bytes"
+	"crypto/tls"
+	"errors"
 	"fmt"
-	"io"
 	"log"
+	"math"
+	"math/rand"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"os/exec"
+	"strconv"
 	"time"
 )
 
@@ -41,17 +46,17 @@ func (srv *Server) ListenAndServe() error {
 	return srv.Serve(ln)
 }
 
+type conn struct {
+	server *Server
+	rwc    net.Conn
+}
+
 func (srv *Server) newConn(rwc net.Conn) *conn {
 	c := &conn{
 		server: srv,
 		rwc:    rwc,
 	}
 	return c
-}
-
-type conn struct {
-	server *Server
-	rwc    net.Conn
 }
 
 func (c *conn) serve() {
@@ -64,25 +69,28 @@ func (c *conn) serve() {
 		c.rwc.SetWriteDeadline(time.Now().Add(d))
 	}
 
-	buf := bufio.NewReader(c.rwc)
-
-	req, err := http.ReadRequest(buf)
+	reader := bufio.NewReader(c.rwc)
+	req, err := http.ReadRequest(reader)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	req.RequestURI = ""
-	req.Header.Del("Proxy-Connection")
+	proxyConn, err := Dial(c.rwc, req)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer proxyConn.Close()
 
-	resp, err := proxyRequest(req)
+	resp, err := HandleProxy(proxyConn, req)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	defer resp.Body.Close()
 
-	respByte, err := ReadResp(resp)
+	respByte, err := httputil.DumpResponse(resp, true)
 	if err != nil {
 		log.Println(err)
 		return
@@ -97,100 +105,75 @@ func (c *conn) serve() {
 	log.Println("Request:", req.Method, req.URL, "Response:", resp.Status)
 }
 
-func proxyRequest(req *http.Request) (*http.Response, error) {
-	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-			DualStack: true,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+func Dial(clientConn net.Conn, r *http.Request) (net.Conn, error) {
+	if r.Method == http.MethodConnect {
+		_, err := clientConn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
+		if err != nil {
+			return nil, err
+		}
+
+		tlsConfig, err := generateTLSConfig(r.Host, r.URL.Scheme)
+		if err != nil {
+			return nil, err
+		}
+
+		tlsLocalConn := tls.Server(clientConn, &tlsConfig)
+		err = tlsLocalConn.Handshake()
+		if err != nil {
+			return nil, err
+		}
+
+		remoteConn, err := tls.Dial("tcp", r.URL.Host, &tlsConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		return remoteConn, nil
 	}
 
-	client := &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	resp, err := client.Do(req)
+	remoteConn, err := net.Dial("tcp", r.URL.Host + ":80")
 	if err != nil {
-		return resp, err
+		return nil, err
+	}
+	return remoteConn, nil
+}
+
+func generateTLSConfig(host, URL string) (tls.Config, error) {
+	cmd := exec.Command("/bin/sh", "./scripts/gen_cert.sh", host, strconv.Itoa(rand.Intn(math.MaxInt32)))
+
+	err := cmd.Start()
+	if err != nil {
+		return tls.Config{}, errors.New(fmt.Sprintf("Start create cert file script error: %v\n", err))
+	}
+
+	err = cmd.Wait()
+	if err != nil {
+		return tls.Config{}, errors.New(fmt.Sprintf("Wait create cert file script error: %v\n", err))
+	}
+
+	tlsCert, err := tls.LoadX509KeyPair("certs/"+host+".crt", "cert.key")
+	if err != nil {
+		log.Println("error loading pair", err)
+		return tls.Config{}, err
+	}
+
+	return tls.Config{
+		Certificates: []tls.Certificate{tlsCert},
+		ServerName:   URL,
+	}, nil
+}
+
+func HandleProxy(c net.Conn, req *http.Request) (*http.Response, error) {
+	err := req.WriteProxy(c)
+	if err != nil {
+		return nil, err
+	}
+
+	reader := bufio.NewReader(c)
+	resp, err := http.ReadResponse(reader, req)
+	if err != nil {
+		return nil, err
 	}
 
 	return resp, nil
-}
-
-func ReadResp(resp *http.Response) ([]byte, error) {
-	var b bytes.Buffer
-
-	b.WriteString(resp.Proto)
-	b.WriteString(" ")
-	b.WriteString(resp.Status)
-	b.WriteString("\r\n")
-
-	for h, v := range resp.Header {
-		b.WriteString(fmt.Sprintf("%s:", h))
-		for _, i := range v {
-			b.WriteString(fmt.Sprintf(" %v", i))
-		}
-		b.WriteString("\r\n")
-	}
-
-	b.WriteString("\r\n")
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return b.Bytes(), err
-	}
-
-	b.Write(respBody)
-	b.WriteString("\r\n")
-
-	return b.Bytes(), err
-}
-
-func PrintReq(req *http.Request) {
-	fmt.Println(req.Method, req.RequestURI, req.Proto)
-
-	fmt.Println("Host:", req.Host)
-
-	for h, v := range req.Header {
-		fmt.Printf("%s:", h)
-		for _, i := range v {
-			fmt.Printf(" %v", i)
-		}
-		fmt.Println()
-	}
-
-	reqBody, err := io.ReadAll(req.Body)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(string(reqBody))
-}
-
-func PrintResp(resp *http.Response) {
-	fmt.Println(resp.Proto, resp.Status)
-
-	for h, v := range resp.Header {
-		fmt.Printf("%s:", h)
-		for _, i := range v {
-			fmt.Printf(" %v", i)
-		}
-		fmt.Println()
-	}
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(string(respBody))
 }
