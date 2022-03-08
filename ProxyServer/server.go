@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx"
+	"io/ioutil"
 	"log"
 	"math"
 	"math/rand"
@@ -20,6 +22,7 @@ type Server struct {
 	Addr         string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+	DB           *pgx.ConnPool
 }
 
 func (srv *Server) Serve(l net.Listener) error {
@@ -44,6 +47,54 @@ func (srv *Server) ListenAndServe() error {
 		return err
 	}
 	return srv.Serve(ln)
+}
+
+func (srv *Server) saveToDB(req *http.Request, resp *http.Response) error {
+	var reqId int32
+	reqHeaders := headersToString(req.Header)
+	reqBody, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	err = srv.DB.QueryRow(`INSERT INTO request (method, scheme, host, path, header, body)
+			values ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		req.Method,
+		req.URL.Scheme,
+		req.URL.Host,
+		req.URL.Path,
+		reqHeaders,
+		string(reqBody)).Scan(&reqId)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	//insertRespQuery := `INSERT INTO response (req_id, code, resp_message, header, body)
+	//values ($1, $2, $3, $4, $5) RETURNING id`
+	//var respId int32
+	//respHeaders := headersToString(resp.Header)
+	//respBody, err := ioutil.ReadAll(resp.Body)
+	//if err != nil {
+	//	return err
+	//}
+	//err = srv.DB.QueryRow(insertRespQuery, reqId, resp.StatusCode, resp.Status[4:], respHeaders, respBody).Scan(&respId)
+	//if err != nil {
+	//	return err
+	//}
+
+	return nil
+}
+
+func headersToString(headers http.Header) string {
+	var stringHeaders string
+	for key, values := range headers {
+		for _, value := range values {
+			stringHeaders += key + " " + value + "\n"
+		}
+	}
+	return stringHeaders
 }
 
 type conn struct {
@@ -103,6 +154,11 @@ func (c *conn) serve() {
 	}
 
 	log.Println("Request:", req.Method, req.URL, "Response:", resp.Status)
+
+	err = c.server.saveToDB(req, resp)
+	if err != nil {
+		return
+	}
 }
 
 func Dial(clientConn net.Conn, r *http.Request) (net.Conn, error) {
@@ -131,7 +187,7 @@ func Dial(clientConn net.Conn, r *http.Request) (net.Conn, error) {
 		return remoteConn, nil
 	}
 
-	remoteConn, err := net.Dial("tcp", r.URL.Host + ":80")
+	remoteConn, err := net.Dial("tcp", r.URL.Host+":80")
 	if err != nil {
 		return nil, err
 	}
