@@ -22,4 +22,4 @@ CREATE TABLE response
     header       text        default '',
     body         text        default '',
     add_time     TIMESTAMPTZ default now()
-);
+);name

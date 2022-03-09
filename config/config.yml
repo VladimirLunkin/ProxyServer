@@ -1,0 +1,16 @@
+proxy:
+  host: 127.0.0.1
+  port: 8080
+
+
+repeater:
+  host: 127.0.0.1
+  port: 8000
+
+
+db:
+  host: 127.0.0.1
+  port: 5432
+  dbname: proxy
+  username: user_proxy
+  password: password

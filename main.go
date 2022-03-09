@@ -2,13 +2,18 @@ package main
 
 import (
 	"Proxy/ProxyServer"
+	"Proxy/Repeater"
+	myConfig "Proxy/config"
 	"fmt"
+	"github.com/fasthttp/router"
 	"github.com/jackc/pgx"
+	"github.com/spf13/viper"
+	"github.com/valyala/fasthttp"
 	"log"
 	"time"
 )
 
-func DBInit(Username, DBName, Password, DBHost, DBPort string) (*pgx.ConnPool, error) {
+func DBConn(Username, DBName, Password, DBHost, DBPort string) (*pgx.ConnPool, error) {
 	ConnStr := fmt.Sprintf("user=%s dbname=%s password=%s host=%s port=%s sslmode=disable",
 		Username,
 		DBName,
@@ -34,27 +39,44 @@ func DBInit(Username, DBName, Password, DBHost, DBPort string) (*pgx.ConnPool, e
 	return pool, nil
 }
 
-var (
-	username = "user_proxy"
-	dbname   = "proxy"
-	password = "password"
-	host     = "localhost"
-	port     = "5432"
-)
-
 func main() {
-	dbConn, err := DBInit(username, dbname, password, host, port)
+	viper.AddConfigPath("./config/")
+	viper.SetConfigName("config")
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatal(err)
+	}
+
+	var config myConfig.Config
+	if err := viper.Unmarshal(&config); err != nil {
+		log.Fatal(err)
+	}
+
+	dbc := config.DB
+	dbConn, err := DBConn(dbc.Username, dbc.DBName, dbc.Password, dbc.Host, dbc.Port)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	server := ProxyServer.Server{
-		Addr:         ":8080",
+		Addr:         config.Proxy.Addr(),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		DB:           dbConn,
 	}
 
-	log.Println("starting server at :8080")
-	log.Fatal(server.ListenAndServe())
+	fmt.Printf("Start proxy server on port %s\n", config.Proxy.Port)
+	go func() {
+		log.Fatal(server.ListenAndServe())
+	}()
+
+	r := router.New()
+
+	db := Repeater.NewRepoPostgres(dbConn)
+
+	Repeater.SetRepeaterRouting(r, &Repeater.Handlers{
+		Repo: db,
+	})
+
+	fmt.Printf("Start repeater server on port %s\n", config.Repeater.Port)
+	log.Fatal(fasthttp.ListenAndServe(config.Repeater.Addr(), r.Handler))
 }
