@@ -1,6 +1,7 @@
 package ProxyServer
 
 import (
+	"Proxy/Repeater"
 	"bufio"
 	"bytes"
 	"crypto/tls"
@@ -43,13 +44,35 @@ func (srv *Server) ListenAndServe() error {
 
 func (srv *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
-		srv.ProxyHTTPS(w, r)
+		srv.proxyHTTPS(w, r)
 	} else {
-		srv.ProxyHTTP(w, r)
+		srv.proxyHTTP(w, r)
 	}
 }
 
-func (srv *Server) ProxyHTTP(w http.ResponseWriter, r *http.Request) {
+func (srv *Server) ProxyHTTP(r *http.Request) *Repeater.Response {
+	r.Header.Del("Proxy-Connection")
+
+	reqId, err := srv.saveRequest(r)
+	if err != nil {
+		log.Printf("fail save to db: %v", err)
+	}
+
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	response, err := srv.saveResponse(reqId, resp)
+	if err != nil {
+		log.Printf("fail save to db: %v", err)
+	}
+
+	return response
+}
+
+func (srv *Server) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Header.Del("Proxy-Connection")
 
 	reqId, err := srv.saveRequest(r)
@@ -70,7 +93,7 @@ func (srv *Server) ProxyHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = srv.saveResponse(reqId, resp)
+	_, err = srv.saveResponse(reqId, resp)
 	if err != nil {
 		log.Printf("fail save to db: %v", err)
 	}
@@ -83,7 +106,7 @@ func (srv *Server) ProxyHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (srv *Server) ProxyHTTPS(w http.ResponseWriter, r *http.Request) {
+func (srv *Server) proxyHTTPS(w http.ResponseWriter, r *http.Request) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		log.Println("Hijacking not supported")
@@ -185,14 +208,14 @@ func (srv *Server) ProxyHTTPS(w http.ResponseWriter, r *http.Request) {
 		log.Printf("fail save to db: %v", err)
 	}
 
-	err = srv.saveResponse(reqId, response)
+	_, err = srv.saveResponse(reqId, response)
 	if err != nil {
 		log.Printf("fail save to db: %v", err)
 	}
 }
 
-func (srv *Server) saveRequest(r *http.Request) (int32, error) {
-	var reqId int32
+func (srv *Server) saveRequest(r *http.Request) (int, error) {
+	var reqId int
 	reqHeaders := headersToString(r.Header)
 	reqBody, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -212,22 +235,35 @@ func (srv *Server) saveRequest(r *http.Request) (int32, error) {
 	return reqId, err
 }
 
-func (srv *Server) saveResponse(reqId int32, resp *http.Response) error {
-	var respId int32
+func (srv *Server) saveResponse(reqId int, resp *http.Response) (*Repeater.Response, error) {
+	var respId int
+	var addTime time.Time
 	respHeaders := headersToString(resp.Header)
 	respBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	resp.Body = ioutil.NopCloser(bytes.NewBuffer(respBody))
 
-	return srv.DB.QueryRow(`INSERT INTO response (req_id, code, resp_message, header, body)
-	values ($1, $2, $3, $4, $5) RETURNING id`,
+	err = srv.DB.QueryRow(`INSERT INTO response (req_id, code, resp_message, header, body)
+	values ($1, $2, $3, $4, $5) RETURNING id, add_time`,
 		reqId,
 		resp.StatusCode,
 		resp.Status[4:],
 		respHeaders,
-		respBody).Scan(&respId)
+		respBody).Scan(&respId, &addTime)
+
+	response := &Repeater.Response{
+		Id: respId,
+		ReqId: reqId,
+		Code: resp.StatusCode,
+		RespMessage: resp.Status[4:],
+		Header: Repeater.StrToHeader(respHeaders),
+		Body: string(respBody),
+		AddTime: addTime,
+	}
+
+	return response, err
 }
 
 func headersToString(headers http.Header) string {

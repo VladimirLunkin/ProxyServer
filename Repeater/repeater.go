@@ -33,7 +33,7 @@ func (h *Handlers) GetRequests(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetRequest(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, "")
+		delivery.SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -49,7 +49,7 @@ func (h *Handlers) GetRequest(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) RepeatRequest(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, "")
+		delivery.SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -64,7 +64,7 @@ func (h *Handlers) RepeatRequest(w http.ResponseWriter, r *http.Request) {
 	urlStr := reqDB.Scheme + "://" + reqDB.Host + reqDB.Path
 	req, err := http.NewRequest(reqDB.Method, urlStr, body)
 	if err != nil {
-		delivery.SendError(w, http.StatusOK, "jopa")
+		delivery.SendError(w, http.StatusOK, err.Error())
 		return
 	}
 
@@ -72,8 +72,25 @@ func (h *Handlers) RepeatRequest(w http.ResponseWriter, r *http.Request) {
 		req.Header.Add(key, value)
 	}
 
-	h.Proxy.ProxyHTTP(w, req)
+	resp := h.Proxy.ProxyHTTP(req)
+
+	delivery.Send(w, http.StatusOK, resp)
 }
 
+var xxe = "<!DOCTYPE foo [\n  <!ELEMENT foo ANY >\n  <!ENTITY xxe SYSTEM \"file:///etc/passwd\" >]>\n<foo>&xxe;</foo>\n"
+
 func (h *Handlers) VulnerabilityScan(w http.ResponseWriter, r *http.Request) {
+	//id, err := strconv.Atoi(mux.Vars(r)["id"])
+	//if err != nil {
+	//	delivery.SendError(w, http.StatusNotFound, "")
+	//	return
+	//}
+	//
+	//reqDB, err := h.Repo.GetRequest(id)
+	//if err != nil {
+	//	delivery.SendError(w, http.StatusNotFound, err.Error())
+	//	return
+	//}
+	//
+	//reqDB
 }

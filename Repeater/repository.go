@@ -57,7 +57,7 @@ func (r RepoPostgres) GetRequest(id int) (Request, error) {
 		&req.AddTime,
 	)
 
-	req.Header = strToHeader(header)
+	req.Header = StrToHeader(header)
 
 	return req, err
 }

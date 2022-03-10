@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func strToHeader(headers string) map[string]string {
+func StrToHeader(headers string) map[string]string {
 	h := make(map[string]string)
 	for _, header := range strings.Split(headers, "\n") {
 		if len(header) < 2 {
@@ -45,5 +45,5 @@ type Repository interface {
 }
 
 type ProxyServer interface {
-	ProxyHTTP(w http.ResponseWriter, r *http.Request)
+	ProxyHTTP(r *http.Request) *Response
 }
