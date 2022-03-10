@@ -1,6 +1,3 @@
-DROP TABLE request CASCADE;
-DROP TABLE response CASCADE;
-
 CREATE TABLE request
 (
     id       SERIAL PRIMARY KEY,
@@ -22,4 +19,4 @@ CREATE TABLE response
     header       text        default '',
     body         text        default '',
     add_time     TIMESTAMPTZ default now()
-);name
+);
