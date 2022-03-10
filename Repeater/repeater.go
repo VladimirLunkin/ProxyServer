@@ -1,7 +1,6 @@
 package Repeater
 
 import (
-	"Proxy/Repeater/delivery"
 	"bytes"
 	"github.com/gorilla/mux"
 	"net/http"
@@ -24,39 +23,39 @@ func SetRepeaterRouting(r *mux.Router, h *Handlers) {
 func (h *Handlers) GetRequests(w http.ResponseWriter, r *http.Request) {
 	req, err := h.Repo.GetRequests()
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, err.Error())
+		SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	delivery.Send(w, http.StatusOK, req)
+	Send(w, http.StatusOK, req)
 }
 
 func (h *Handlers) GetRequest(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, err.Error())
+		SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
 	req, err := h.Repo.GetRequest(id)
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, err.Error())
+		SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	delivery.Send(w, http.StatusOK, req)
+	Send(w, http.StatusOK, req)
 }
 
 func (h *Handlers) RepeatRequest(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, err.Error())
+		SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
 	reqDB, err := h.Repo.GetRequest(id)
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, err.Error())
+		SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -65,7 +64,7 @@ func (h *Handlers) RepeatRequest(w http.ResponseWriter, r *http.Request) {
 	urlStr := reqDB.Scheme + "://" + reqDB.Host + reqDB.Path
 	req, err := http.NewRequest(reqDB.Method, urlStr, body)
 	if err != nil {
-		delivery.SendError(w, http.StatusOK, err.Error())
+		SendError(w, http.StatusOK, err.Error())
 		return
 	}
 
@@ -75,7 +74,7 @@ func (h *Handlers) RepeatRequest(w http.ResponseWriter, r *http.Request) {
 
 	resp := h.Proxy.ProxyHTTP(req)
 
-	delivery.Send(w, http.StatusOK, resp)
+	Send(w, http.StatusOK, resp)
 }
 
 var (
@@ -88,13 +87,13 @@ var (
 func (h *Handlers) VulnerabilityScan(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, "")
+		SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
 	reqDB, err := h.Repo.GetRequest(id)
 	if err != nil {
-		delivery.SendError(w, http.StatusNotFound, err.Error())
+		SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -106,7 +105,7 @@ func (h *Handlers) VulnerabilityScan(w http.ResponseWriter, r *http.Request) {
 	urlStr := reqDB.Scheme + "://" + reqDB.Host + reqDB.Path
 	req, err := http.NewRequest(reqDB.Method, urlStr, body)
 	if err != nil {
-		delivery.SendError(w, http.StatusOK, err.Error())
+		SendError(w, http.StatusOK, err.Error())
 		return
 	}
 
@@ -117,9 +116,9 @@ func (h *Handlers) VulnerabilityScan(w http.ResponseWriter, r *http.Request) {
 	resp := h.Proxy.ProxyHTTP(req)
 
 	if ind := strings.Index(resp.Body, target); ind != -1 {
-		delivery.Send(w, http.StatusOK, requestIsVulnerable)
+		Send(w, http.StatusOK, requestIsVulnerable)
 		return
 	}
 
-	delivery.Send(w, http.StatusOK, resp)
+	Send(w, http.StatusOK, resp)
 }
