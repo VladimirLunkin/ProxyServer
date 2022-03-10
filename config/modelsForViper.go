@@ -6,7 +6,7 @@ type ServerConfig struct {
 }
 
 func (srv ServerConfig) Addr() string {
-	return srv.Host + ":" + srv.Port
+	return /*srv.Host + */":" + srv.Port
 }
 
 type DBConfig struct {
