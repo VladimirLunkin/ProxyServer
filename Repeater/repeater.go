@@ -2,54 +2,78 @@ package Repeater
 
 import (
 	"Proxy/Repeater/delivery"
-	"fmt"
-	"github.com/fasthttp/router"
-	"github.com/valyala/fasthttp"
+	"bytes"
+	"github.com/gorilla/mux"
 	"net/http"
 	"strconv"
 )
 
 type Handlers struct {
-	Repo Repository
+	Repo  Repository
+	Proxy ProxyServer
 }
 
-func SetRepeaterRouting(r *router.Router, h *Handlers) {
-	r.GET("/requests", h.GetRequests)
-	r.GET("/requests/{id}", h.GetRequest)
-	r.GET("/repeat/{id}", h.RepeatRequest)
-	r.GET("/scan/{id}", h.VulnerabilityScan)
+func SetRepeaterRouting(r *mux.Router, h *Handlers) {
+	r.HandleFunc("/requests", h.GetRequests).Methods("GET")
+	r.HandleFunc("/requests/{id:[0-9]+}", h.GetRequest).Methods("GET")
+	r.HandleFunc("/repeat/{id:[0-9]+}", h.RepeatRequest).Methods("GET")
+	r.HandleFunc("/scan/{id:[0-9]+}", h.VulnerabilityScan).Methods("GET")
 }
 
-func (h *Handlers) GetRequests(ctx *fasthttp.RequestCtx) {
+func (h *Handlers) GetRequests(w http.ResponseWriter, r *http.Request) {
 	req, err := h.Repo.GetRequests()
 	if err != nil {
-		delivery.SendError(ctx, http.StatusNotFound, err.Error())
+		delivery.SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	delivery.Send(ctx, http.StatusOK, req)
+	delivery.Send(w, http.StatusOK, req)
 }
 
-func (h *Handlers) GetRequest(ctx *fasthttp.RequestCtx) {
-	id, err := strconv.Atoi(fmt.Sprintf("%s", ctx.UserValue("id")))
+func (h *Handlers) GetRequest(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		delivery.SendError(ctx, http.StatusNotFound, "")
+		delivery.SendError(w, http.StatusNotFound, "")
 		return
 	}
 
 	req, err := h.Repo.GetRequest(id)
 	if err != nil {
-		delivery.SendError(ctx, http.StatusNotFound, err.Error())
+		delivery.SendError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	delivery.Send(ctx, http.StatusOK, req)
+	delivery.Send(w, http.StatusOK, req)
 }
 
-func (h *Handlers) RepeatRequest(ctx *fasthttp.RequestCtx) {
+func (h *Handlers) RepeatRequest(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil {
+		delivery.SendError(w, http.StatusNotFound, "")
+		return
+	}
 
+	reqDB, err := h.Repo.GetRequest(id)
+	if err != nil {
+		delivery.SendError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	body := bytes.NewBufferString(reqDB.Body)
+
+	urlStr := reqDB.Scheme + "://" + reqDB.Host + reqDB.Path
+	req, err := http.NewRequest(reqDB.Method, urlStr, body)
+	if err != nil {
+		delivery.SendError(w, http.StatusOK, "jopa")
+		return
+	}
+
+	for key, value := range reqDB.Header {
+		req.Header.Add(key, value)
+	}
+
+	h.Proxy.ProxyHTTP(w, req)
 }
 
-func (h *Handlers) VulnerabilityScan(ctx *fasthttp.RequestCtx) {
-
+func (h *Handlers) VulnerabilityScan(w http.ResponseWriter, r *http.Request) {
 }

@@ -31,6 +31,9 @@ func (srv *Server) ListenAndServe() error {
 	server := http.Server{
 		Addr: srv.Addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Println("======")
+			fmt.Println(r)
+			fmt.Println("======")
 			srv.proxy(w, r)
 		}),
 	}
@@ -40,13 +43,13 @@ func (srv *Server) ListenAndServe() error {
 
 func (srv *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
-		srv.proxyHTTPS(w, r)
+		srv.ProxyHTTPS(w, r)
 	} else {
-		srv.proxyHTTP(w, r)
+		srv.ProxyHTTP(w, r)
 	}
 }
 
-func (srv *Server) proxyHTTP(w http.ResponseWriter, r *http.Request) {
+func (srv *Server) ProxyHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Header.Del("Proxy-Connection")
 
 	reqId, err := srv.saveRequest(r)
@@ -80,7 +83,7 @@ func (srv *Server) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (srv *Server) proxyHTTPS(w http.ResponseWriter, r *http.Request) {
+func (srv *Server) ProxyHTTPS(w http.ResponseWriter, r *http.Request) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		log.Println("Hijacking not supported")

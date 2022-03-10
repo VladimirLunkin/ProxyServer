@@ -5,11 +5,11 @@ import (
 	"Proxy/Repeater"
 	myConfig "Proxy/config"
 	"fmt"
-	"github.com/fasthttp/router"
+	"github.com/gorilla/mux"
 	"github.com/jackc/pgx"
 	"github.com/spf13/viper"
-	"github.com/valyala/fasthttp"
 	"log"
+	"net/http"
 	"time"
 )
 
@@ -69,14 +69,20 @@ func main() {
 		log.Fatal(server.ListenAndServe())
 	}()
 
-	r := router.New()
+	r := mux.NewRouter()
 
 	db := Repeater.NewRepoPostgres(dbConn)
 
 	Repeater.SetRepeaterRouting(r, &Repeater.Handlers{
-		Repo: db,
+		Repo:  db,
+		Proxy: &server,
 	})
 
+	repeaterServer := http.Server{
+		Addr:    config.Repeater.Addr(),
+		Handler: r,
+	}
+
 	fmt.Printf("Start repeater server on port %s\n", config.Repeater.Port)
-	log.Fatal(fasthttp.ListenAndServe(config.Repeater.Addr(), r.Handler))
+	log.Fatal(repeaterServer.ListenAndServe())
 }

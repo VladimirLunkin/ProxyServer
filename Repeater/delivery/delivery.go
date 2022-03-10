@@ -2,7 +2,6 @@ package delivery
 
 import (
 	"encoding/json"
-	"github.com/valyala/fasthttp"
 	"net/http"
 )
 
@@ -10,22 +9,22 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-func Send(ctx *fasthttp.RequestCtx, status int, data interface{}) {
-	ctx.SetContentType("application/json")
+func Send(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Add("Content-Type", "application/json")
 
-	ctx.SetStatusCode(status)
+	w.WriteHeader(status)
 	body, err := json.Marshal(data)
 	if err != nil {
-		ctx.SetStatusCode(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	ctx.SetBody(body)
+	w.Write(body)
 }
 
-func SendOK(ctx *fasthttp.RequestCtx) {
-	ctx.SetStatusCode(http.StatusOK)
+func SendOK(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusOK)
 }
 
-func SendError(ctx *fasthttp.RequestCtx, status int, err string) {
-	Send(ctx, status, Error{Message: err})
+func SendError(w http.ResponseWriter, status int, err string) {
+	Send(w, status, Error{Message: err})
 }

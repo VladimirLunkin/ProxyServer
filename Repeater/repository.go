@@ -1,6 +1,8 @@
 package Repeater
 
-import "github.com/jackc/pgx"
+import (
+	"github.com/jackc/pgx"
+)
 
 type RepoPostgres struct {
 	db *pgx.ConnPool
@@ -41,6 +43,8 @@ func (r RepoPostgres) GetRequests() ([]Request, error) {
 
 func (r RepoPostgres) GetRequest(id int) (Request, error) {
 	var req Request
+	var header string
+
 	err := r.db.QueryRow(`SELECT "id", "method", "scheme", "host", "path", "header", "body", "add_time"
 		FROM "request" WHERE "id" = $1;`, id).Scan(
 		&req.Id,
@@ -48,10 +52,12 @@ func (r RepoPostgres) GetRequest(id int) (Request, error) {
 		&req.Scheme,
 		&req.Host,
 		&req.Path,
-		&req.Header,
+		&header,
 		&req.Body,
 		&req.AddTime,
 	)
+
+	req.Header = strToHeader(header)
 
 	return req, err
 }
